@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,47 +22,40 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-/* Contains sources copyright Fredrik Öhrström 2014, 
- * licensed from Fredrik to you under the above license. */
+
 package com.sun.tools.sjavac;
 
 import java.io.*;
 import java.net.URI;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
-
-import com.sun.tools.sjavac.options.Options;
-import com.sun.tools.sjavac.server.Sjavac;
+import java.util.HashSet;
+import java.util.Map;
 
 /**
  * The copy file transform simply copies a matching file from -src to -d .
  * Such files are typically images, xml documents and other data files.
  *
- *  <p><b>This is NOT part of any supported API.
- *  If you write code that depends on this, you do so at your own risk.
- *  This code and its internal interfaces are subject to change or
- *  deletion without notice.</b>
+ * <p><b>This is NOT part of any supported API.
+ * If you write code that depends on this, you do so at your own
+ * risk.  This code and its internal interfaces are subject to change
+ * or deletion without notice.</b></p>
  */
 public class CopyFile implements Transformer {
 
     public void setExtra(String e) {
     }
 
-    public void setExtra(Options a) {
+    public void setExtra(String[] a) {
     }
 
-    public boolean transform(Sjavac sjavac,
-                             Map<String,Set<URI>> pkgSrcs,
+    public boolean transform(Map<String,Set<URI>> pkgSrcs,
                              Set<URI> visibleSrcs,
                              Map<URI,Set<String>> visibleClasses,
                              Map<String,Set<String>> oldPackageDependents,
                              URI destRoot,
                              Map<String,Set<URI>>    packageArtifacts,
                              Map<String,Set<String>> packageDependencies,
-                             Map<String,List<String>> packagePubapis,
-                             Map<String,Set<String>> classpathPackageDependencies,
+                             Map<String,String>      packagePubapis,
                              int debugLevel,
                              boolean incremental,
                              int numCores,
@@ -92,7 +85,7 @@ public class CopyFile implements Transformer {
 
                 Set<URI> as = packageArtifacts.get(pkgName);
                 if (as == null) {
-                    as = new HashSet<>();
+                    as = new HashSet<URI>();
                     packageArtifacts.put(pkgName, as);
                 }
                 as.add(dest.toURI());

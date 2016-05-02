@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,8 +22,7 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-/* Contains sources copyright Fredrik Öhrström 2014, 
- * licensed from Fredrik to you under the above license. */
+
 package com.sun.tools.sjavac;
 
 import java.io.File;
@@ -37,17 +36,17 @@ import java.util.Set;
  * The module is the root of a set of packages/sources/artifacts.
  * At the moment there is only one module in use, the empty/no-name/default module.
  *
- *  <p><b>This is NOT part of any supported API.
- *  If you write code that depends on this, you do so at your own risk.
- *  This code and its internal interfaces are subject to change or
- *  deletion without notice.</b>
+ * <p><b>This is NOT part of any supported API.
+ * If you write code that depends on this, you do so at your own
+ * risk.  This code and its internal interfaces are subject to change
+ * or deletion without notice.</b></p>
  */
 public class Module implements Comparable<Module> {
     private String name;
     private String dirname;
-    private Map<String,Package> packages = new HashMap<>();
-    private Map<String,Source> sources = new HashMap<>();
-    private Map<String,File> artifacts = new HashMap<>();
+    private Map<String,Package> packages = new HashMap<String,Package>();
+    private Map<String,Source> sources = new HashMap<String,Source>();
+    private Map<String,File> artifacts = new HashMap<String,File>();
 
     public Module(String n, String dn) {
         name = n;
@@ -130,18 +129,13 @@ public class Module implements Comparable<Module> {
         p.setDependencies(deps);
     }
 
-    public void setPubapiForLinkedClasses(String pkg, List<String> ps) {
+    public void setPubapi(String pkg, List<String> ps) {
         Package p = lookupPackage(pkg);
-        p.setPubapiForLinkedClasses(ps);
+        p.setPubapi(ps);
     }
 
-    public void setPubapiForCompiledSources(String pkg, List<String> ps) {
+    public boolean hasPubapiChanged(String pkg, List<String> ps) {
         Package p = lookupPackage(pkg);
-        p.setPubapiForCompiledSources(ps);
-    }
-
-    public boolean hasPubapiForCompiledSourcesChanged(String pkg, List<String> ps) {
-        Package p = lookupPackage(pkg);
-        return p.hasPubapiForCompiledSourcesChanged(ps);
+        return p.hasPubapiChanged(ps);
     }
 }

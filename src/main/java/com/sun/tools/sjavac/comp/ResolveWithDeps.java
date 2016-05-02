@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,10 +30,10 @@ import com.sun.tools.javac.code.Symbol;
 
 /** Subclass to Resolve that overrides collect.
  *
- *  <p><b>This is NOT part of any supported API.
- *  If you write code that depends on this, you do so at your own risk.
- *  This code and its internal interfaces are subject to change or
- *  deletion without notice.</b>
+ * <p><b>This is NOT part of any supported API.
+ * If you write code that depends on this, you do so at your own
+ * risk.  This code and its internal interfaces are subject to change
+ * or deletion without notice.</b></p>
  */
 public class ResolveWithDeps extends Resolve {
 
@@ -62,11 +62,6 @@ public class ResolveWithDeps extends Resolve {
     @Override
     public void reportDependence(Symbol from, Symbol to) {
         // Capture dependencies between the packages.
-        deps.reportPackageDep(from.packge().fullname, to.packge().fullname);
-        // It would be convenient to check if to.outermost comes from source or classpath
-        // and only report it, if its from the classpath. This would reduce the amount
-        // of data sent over the wire to the sjavac client. Can this be done? All interesting
-        // classes are private within javac/file or javac/jvm....
-        deps.reportClassDep(to.outermostClass());
+        deps.collect(from.packge().fullname, to.packge().fullname);
     }
 }

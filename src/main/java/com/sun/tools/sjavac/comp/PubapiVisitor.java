@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,74 +22,39 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-/* Contains sources copyright Fredrik Öhrström 2014, 
- * licensed from Fredrik to you under the above license. */
+
 package com.sun.tools.sjavac.comp;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
-import java.util.LinkedList;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
-import javax.lang.model.util.ElementScanner8;
+import javax.lang.model.util.ElementScanner6;
 
 /** Utility class that constructs a textual representation
  * of the public api of a class.
  *
- *  <p><b>This is NOT part of any supported API.
- *  If you write code that depends on this, you do so at your own risk.
- *  This code and its internal interfaces are subject to change or
- *  deletion without notice.</b>
+ * <p><b>This is NOT part of any supported API.
+ * If you write code that depends on this, you do so at your own
+ * risk.  This code and its internal interfaces are subject to change
+ * or deletion without notice.</b></p>
  */
-public class PubapiVisitor extends ElementScanner8<Void, Void> {
+public class PubapiVisitor extends ElementScanner6<Void, Void> {
 
-    // The pubapi is stored here.
-    List<String> api = new LinkedList<String>();
-    // The hash of the pubapi (excluding paths to jars/classes and their timestamp)
-    int hash;
-    // Indentation level.
-    int indent = 0;
-    // The class location info is for example:
-    // ZipFileIndexFileObject[/home/fredrik/bin/jdk1.8.0/lib/tools.jar(com/sun/tools/javac/comp/Resolve.class) 1396702502000
-    // ie the jfileobj.toString() + " " + jfileobj.getLastModified()
-    String class_loc_info = "";
+    StringBuffer sb;
+    // Important that it is 1! Part of protocol over wire, silly yes.
+    // Fix please.
+    int indent = 1;
 
-    // If true, then store full public api information, not just the hash.
-    // Takes a lot of space in the javac_state file, but makes it much easier 
-    // to debug any public api bugs.
-    boolean debugPubapi = false;
+    public PubapiVisitor(StringBuffer sb) {
+        this.sb = sb;
+    }
 
     String depth(int l) {
-        return "________________________________".substring(0, l);
-    }
-
-    public void classLocInfo(String s) {
-        class_loc_info = " "+s;
-    }
-
-    public void construct(TypeElement e) {
-        visit(e);
-        hash = 0;
-        List<String> sorted_api = new ArrayList<>();
-        sorted_api.addAll(api);
-        // Why sort here? Because we want the same pubapi hash to be generated
-        // for both a source compile and a classpath extraction.
-        // For xor it might not matter, but perhaps a better function is used in the future.
-        Collections.sort(sorted_api);
-
-        for (String s : sorted_api) {
-            hash ^= s.hashCode();
-        }
-        api = new LinkedList<String>();
-        api.add(0, "PUBAPI "+e.getQualifiedName()+" "+Integer.toString(Math.abs(hash),16)+class_loc_info);
-        if (debugPubapi) {
-            api.addAll(sorted_api);
-        }
+        return "                                              ".substring(0, l);
     }
 
     @Override
@@ -97,7 +62,7 @@ public class PubapiVisitor extends ElementScanner8<Void, Void> {
         if (e.getModifiers().contains(Modifier.PUBLIC)
             || e.getModifiers().contains(Modifier.PROTECTED))
         {
-            api.add(depth(indent) + "!TYPE " + e.getQualifiedName());
+            sb.append(depth(indent) + "TYPE " + e.getQualifiedName() + "\n");
             indent += 2;
             Void v = super.visitType(e, p);
             indent -= 2;
@@ -110,7 +75,8 @@ public class PubapiVisitor extends ElementScanner8<Void, Void> {
     public Void visitVariable(VariableElement e, Void p) {
         if (e.getModifiers().contains(Modifier.PUBLIC)
             || e.getModifiers().contains(Modifier.PROTECTED)) {
-            api.add(depth(indent)+"VAR "+makeVariableString(e));
+            sb.append(depth(indent)).append("VAR ")
+                    .append(makeVariableString(e)).append("\n");
         }
         // Safe to not recurse here, because the only thing
         // to visit here is the constructor of a variable declaration.
@@ -124,7 +90,8 @@ public class PubapiVisitor extends ElementScanner8<Void, Void> {
     public Void visitExecutable(ExecutableElement e, Void p) {
         if (e.getModifiers().contains(Modifier.PUBLIC)
             || e.getModifiers().contains(Modifier.PROTECTED)) {
-            api.add(depth(indent)+"METHOD "+makeMethodString(e));
+            sb.append(depth(indent)).append("METHOD ")
+                    .append(makeMethodString(e)).append("\n");
         }
         return null;
     }

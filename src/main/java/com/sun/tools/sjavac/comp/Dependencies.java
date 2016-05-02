@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,24 +22,18 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-/* Contains sources copyright Fredrik Öhrström 2014, 
- * licensed from Fredrik to you under the above license. */
+
 package com.sun.tools.sjavac.comp;
 
 import javax.lang.model.element.Element;
-import javax.lang.model.element.TypeElement;
 import java.util.Arrays;
-import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.List;
-import java.util.LinkedList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
 import com.sun.tools.javac.code.Symbol.ClassSymbol;
-import com.sun.tools.javac.util.Assert;
 import com.sun.tools.javac.util.Context;
 import com.sun.tools.javac.util.Log;
 import com.sun.tools.javac.util.Name;
@@ -47,29 +41,27 @@ import com.sun.tools.javac.util.Name;
 /** Utility class containing dependency information between packages
  *  and the pubapi for a package.
  *
- *  <p><b>This is NOT part of any supported API.
- *  If you write code that depends on this, you do so at your own risk.
- *  This code and its internal interfaces are subject to change or
- *  deletion without notice.</b>
+ * <p><b>This is NOT part of any supported API.
+ * If you write code that depends on this, you do so at your own
+ * risk.  This code and its internal interfaces are subject to change
+ * or deletion without notice.</b></p>
  */
 public class Dependencies {
-    protected static final Context.Key<Dependencies> dependenciesKey = new Context.Key<>();
+    protected static final Context.Key<Dependencies> dependenciesKey =
+        new Context.Key<Dependencies>();
 
     // The log to be used for error reporting.
     protected Log log;
     // Map from package name to packages that the package depends upon.
     protected Map<Name,Set<Name>> deps;
-    // Map from package name to non-sourcefile classes that the package depends upon.
-    protected Map<Name,Set<ClassSymbol>> classDeps;
     // This is the set of all packages that are supplied
     // through the java files at the command line.
     protected Set<Name> explicitPackages;
 
-    // This is the set of all classes found outside of the source, ie the classpath.
-    protected Set<Name> classpathClasses;
-
-    // Map from a class name to its public api.
-    protected Map<Name,List<String>> publicApiPerClass;
+    // Map from a package name to its public api.
+    // Will the Name encode the module in the future?
+    // If not, this will have to change to map from Module+Name to public api.
+    protected Map<Name,StringBuffer> publicApiPerClass;
 
     public static Dependencies instance(Context context) {
         Dependencies instance = context.get(dependenciesKey);
@@ -81,10 +73,13 @@ public class Dependencies {
     private Dependencies(Context context) {
         context.put(dependenciesKey, this);
         log = Log.instance(context);
-        deps = new HashMap<>();
-        classDeps = new HashMap<>();
-        explicitPackages = new HashSet<>();
-        publicApiPerClass = new HashMap<>();
+    }
+
+    public void reset()
+    {
+        deps = new HashMap<Name, Set<Name>>();
+        explicitPackages = new HashSet<Name>();
+        publicApiPerClass = new HashMap<Name,StringBuffer>();
     }
 
     /**
@@ -93,17 +88,17 @@ public class Dependencies {
      * dependencies for classes that were explicitly compiled.
      * @return
      */
-    public Map<String,Set<String>> getSourcefileDependencies() {
-        Map<String,Set<String>> new_deps = new HashMap<>();
+    public Map<String,Set<String>> getDependencies() {
+        Map<String,Set<String>> new_deps = new HashMap<String,Set<String>>();
+        if (explicitPackages == null) return new_deps;
         for (Name pkg : explicitPackages) {
             Set<Name> set = deps.get(pkg);
             if (set != null) {
-                String pkg_name = pkg.toString();
-                Set<String> new_set = new_deps.get(pkg_name);
+                Set<String> new_set = new_deps.get(pkg.toString());
                 if (new_set == null) {
-                    new_set = new HashSet<>();
+                    new_set = new HashSet<String>();
                     // Modules beware....
-                    new_deps.put(":"+pkg_name, new_set);
+                    new_deps.put(":"+pkg.toString(), new_set);
                 }
                 for (Name d : set) {
                     new_set.add(":"+d.toString());
@@ -113,30 +108,11 @@ public class Dependencies {
         return new_deps;
     }
 
-    /**
-     * Fetch the set of classpath dependencies that our sources depend upon.
-     * @return
-     */
-    public Map<String,Set<String>> getClasspathDependencies() {
-        Map<String,Set<String>> new_deps = new HashMap<>();
+    static class CompareNames implements Comparator<Name> {
+         public int compare(Name a, Name b) {
+             return a.toString().compareTo(b.toString());
+         }
 
-        for (Name pkg : classDeps.keySet()) {
-            if (explicitPackages.contains(pkg)) {
-                continue;
-            }
-            Set<ClassSymbol> set = classDeps.get(pkg);
-            String pkg_name = pkg.toString();
-            Set<String> new_set = new_deps.get(pkg_name);
-            if (new_set == null) {
-                new_set = new HashSet<>();
-                // Modules beware....
-                new_deps.put(":"+pkg_name, new_set);
-            }
-            for (ClassSymbol c : set) {
-                new_set.add(""+c.fullname);
-            }
-        }
-        return new_deps;
     }
 
     /**
@@ -144,125 +120,66 @@ public class Dependencies {
      * from package names to their pubapi (which is the sorted concatenation
      * of all the class pubapis)
      */
-    public Map<String,List<String>> getPublicApis() {
-        // The result map, to be returned.
-        Map<String,List<String>> publicApiPerPackage = new HashMap<>();
-        // Remember the Name for the sortable String version of the name.
-        // I.e. where the dot (.) before the class name is replaced with bang (!).
-        Map<String,Name> backToName = new HashMap<>();
-        // Sort all the classes on their fullname that includes the package path.
-        // Thus all classes belonging to the same package will be in consecutive order.
-        Name[] names = publicApiPerClass.keySet().toArray(new Name[0]);
-        List<String> fullnames = new ArrayList<>();
-        for (Name n : names) {
-            String tmp = n.toString();
-            int p = tmp.lastIndexOf('.');
-            String s = tmp.substring(0,p)+"!"+tmp.substring(p+1);
-            fullnames.add(s);
-            backToName.put(s, n);
-        }
-        String[] sorted_fullnames = fullnames.toArray(new String[0]);
-        Arrays.sort(sorted_fullnames);
-        // Now sorted_fullnames has a list of classes sorted, but with all classes inside
-        // a package grouped together. This would not happen if we did not use !.
-        String currPkg = "";
-        List<String> currPublicApi = null;
-
-        for (String n : sorted_fullnames) {
-            int lastBang = n.lastIndexOf('!');
-            assert(lastBang != -1);
-            String pkgName = n.substring(0, lastBang);
-            if (!pkgName.equals(currPkg)) {
-                if (!currPkg.equals("")) {
+    public Map<String,String> getPubapis() {
+        Map<String,String> publicApiPerPackage = new HashMap<String,String>();
+        if (publicApiPerClass == null) return publicApiPerPackage;
+        Name[] keys = publicApiPerClass.keySet().toArray(new Name[0]);
+        Arrays.sort(keys, new CompareNames());
+        StringBuffer newPublicApi = new StringBuffer();
+        int i=0;
+        String prevPkg = "";
+        for (Name k : keys) {
+            String cn = k.toString();
+            String pn = "";
+            int dp = cn.lastIndexOf('.');
+            if (dp != -1) {
+                pn = cn.substring(0,dp);
+            }
+            if (!pn.equals(prevPkg)) {
+                if (!prevPkg.equals("")) {
                     // Add default module name ":"
-                    publicApiPerPackage.put(":"+currPkg, currPublicApi);
+                    publicApiPerPackage.put(":"+prevPkg, newPublicApi.toString());
                 }
-                currPublicApi = new LinkedList<>();
-                currPkg = pkgName;
-             }
-             currPublicApi.addAll(publicApiPerClass.get(backToName.get(n)));
+                newPublicApi = new StringBuffer();
+                prevPkg = pn;
+            }
+            newPublicApi.append(publicApiPerClass.get(k));
+            i++;
         }
-        if (currPkg != "" && currPublicApi != null) {
-            publicApiPerPackage.put(":"+currPkg, currPublicApi);
-        }
+        if (!prevPkg.equals(""))
+            publicApiPerPackage.put(":"+prevPkg, newPublicApi.toString());
         return publicApiPerPackage;
+    }
+
+    /**
+     * Visit the api of a class and construct a pubapi string and
+     * store it into the pubapi_perclass map.
+     */
+    public void visitPubapi(Element e) {
+        Name n = ((ClassSymbol)e).fullname;
+        Name p = ((ClassSymbol)e).packge().fullname;
+        StringBuffer sb = publicApiPerClass.get(n);
+        assert(sb == null);
+        sb = new StringBuffer();
+        PubapiVisitor v = new PubapiVisitor(sb);
+        v.visit(e);
+        if (sb.length()>0) {
+            publicApiPerClass.put(n, sb);
+        }
+        explicitPackages.add(p);
      }
 
-     /**
-      * Visit the api of a source class and construct a pubapi string and
-      * store it into the pubapi_perclass map.
-      */
-    public void visitPubapiOfSource(TypeElement e) {
-        visitPubapi(e);
-        Name p = ((ClassSymbol)e).packge().fullname;
-        explicitPackages.add(p);
-    }
-
     /**
-     * Visit the api of a classpath class and construct a pubapi string and
-     * store it into the pubapi_perclass map.
+     * Collect a dependency. curr_pkg is marked as depending on dep_pkg.
      */
-    public void visitPubapiOfClasspath(TypeElement e) {
-        visitPubapi(e);
-    }
-
-    /**
-     * Visit the api of a class and construct a list of api strings and
-     * store it into the pubapi_perclass map.
-     */
-    private void visitPubapi(TypeElement e) {
-        Name n = ((ClassSymbol)e).fullname;
-        assert(publicApiPerClass.get(n) == null);
-
-        PubapiVisitor v = new PubapiVisitor();
-        v.construct(e);
-        publicApiPerClass.put(n, v.api);
-    }
-    
-    /**
-     * Visit the api of a class and return the constructed pubapi string.
-     */
-    public static List<String> constructPubapi(TypeElement e, String class_loc_info) {
-
-        PubapiVisitor v = new PubapiVisitor();
-        if (class_loc_info != null) {
-            v.classLocInfo(class_loc_info);
-        }
-        v.construct(e);
-        return v.api;
-    }
-
-    /**
-     * Collect a package dependency. currPkg is marked as depending on depPkg.
-     */
-    public void reportPackageDep(Name currPkg, Name depPkg) {
+    public void collect(Name currPkg, Name depPkg) {
         if (!currPkg.equals(depPkg)) {
             Set<Name> theset = deps.get(currPkg);
             if (theset==null) {
-                theset = new HashSet<>();
+                theset = new HashSet<Name>();
                 deps.put(currPkg, theset);
             }
             theset.add(depPkg);
         }
     }
-
-    /**
-     * Collect a classpath class dependency. currPkg is marked as depending on depCls.
-     */
-    public void reportClassDep(ClassSymbol depCls) {
-        String s = depCls.classfile != null ? depCls.classfile.toString() : ""; 
-        if (s.startsWith("RegularFileObject[") && 
-            s.endsWith(".java]")) {
-            // This was a sourcepath dependency, ignore it.
-            return;
-        }
-        Name pkg = depCls.packge().fullname;
-        Set<ClassSymbol> theset = classDeps.get(pkg);
-        if (theset==null) {
-            theset = new HashSet<>();
-            classDeps.put(pkg, theset);
-        }
-        theset.add(depCls);
-    }
-
 }

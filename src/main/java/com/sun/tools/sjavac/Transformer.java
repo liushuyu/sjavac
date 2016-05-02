@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,18 +22,13 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-/* Contains sources copyright Fredrik Öhrström 2014, 
- * licensed from Fredrik to you under the above license. */
+
 package com.sun.tools.sjavac;
 
 import java.io.PrintStream;
 import java.net.URI;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
-
-import com.sun.tools.sjavac.options.Options;
-import com.sun.tools.sjavac.server.Sjavac;
+import java.util.Map;
 
 /**
  * The transform interface is used to transform content inside a package, from one form to another.
@@ -41,12 +36,13 @@ import com.sun.tools.sjavac.server.Sjavac;
  * but can also be an unpredictable number of generated source files (eg idl2java)
  * or a single predictable output file (eg when copying,cleaning or compiling a properties file).
  *
- *  <p><b>This is NOT part of any supported API.
- *  If you write code that depends on this, you do so at your own risk.
- *  This code and its internal interfaces are subject to change or
- *  deletion without notice.</b>
+ * <p><b>This is NOT part of any supported API.
+ * If you write code that depends on this, you do so at your own
+ * risk.  This code and its internal interfaces are subject to change
+ * or deletion without notice.</b></p>
  */
-public interface Transformer {
+public interface Transformer
+{
     /**
      * The transform method takes a set of package names, mapped to their source files and to the
      * pubapis of the packages.
@@ -84,16 +80,14 @@ public interface Transformer {
      * If num_cores is set to a non-zero value. The transform should attempt to use no more than these
      * number of threads for heavy work.
      */
-    boolean transform(Sjavac sjavac,
-                      Map<String,Set<URI>> pkgSrcs,
+    boolean transform(Map<String,Set<URI>> pkgSrcs,
                       Set<URI>             visibleSources,
                       Map<URI,Set<String>> visibleClasses,
                       Map<String,Set<String>> oldPackageDependencies,
                       URI destRoot,
                       Map<String,Set<URI>>    packageArtifacts,
                       Map<String,Set<String>> packageDependencies,
-                      Map<String,List<String>> packagePublicApis,
-                      Map<String,Set<String>> classpathPackageDependencies,
+                      Map<String,String>      packagePublicApis,
                       int debugLevel,
                       boolean incremental,
                       int numCores,
@@ -101,5 +95,5 @@ public interface Transformer {
                       PrintStream err);
 
     void setExtra(String e);
-    void setExtra(Options args);
+    void setExtra(String[] args);
 }

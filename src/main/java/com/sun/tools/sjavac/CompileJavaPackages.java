@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,23 +22,18 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-/* Contains sources copyright Fredrik Öhrström 2014, 
- * licensed from Fredrik to you under the above license. */
+
 package com.sun.tools.sjavac;
 
-import java.io.File;
-import java.io.PrintStream;
 import java.net.URI;
 import java.util.Arrays;
-import java.util.Collections;
+import java.util.Random;
 import java.util.Set;
-import java.util.List;
 import java.util.Map;
 
-import com.sun.tools.sjavac.options.Options;
-import com.sun.tools.sjavac.server.CompilationResult;
-import com.sun.tools.sjavac.server.Sjavac;
+import com.sun.tools.sjavac.server.JavacServer;
 import com.sun.tools.sjavac.server.SysInfo;
+import java.io.PrintStream;
 
 /**
  * This transform compiles a set of packages containing Java sources.
@@ -59,43 +54,47 @@ public class CompileJavaPackages implements Transformer {
     // We hope to improve this in the future.
     final static int limitOnConcurrency = 3;
 
-    Options args;
-
+    String serverSettings;
     public void setExtra(String e) {
+        serverSettings = e;
     }
 
-    public void setExtra(Options a) {
+    String[] args;
+    public void setExtra(String[] a) {
         args = a;
     }
 
-    public boolean transform(final Sjavac sjavac,
-                             Map<String,Set<URI>> pkgSrcs,
-                             final Set<URI>             visibleSources,
-                             final Map<URI,Set<String>> visibleClasses,
+    public boolean transform(Map<String,Set<URI>> pkgSrcs,
+                             Set<URI>             visibleSources,
+                             Map<URI,Set<String>> visibleClasses,
                              Map<String,Set<String>> oldPackageDependents,
                              URI destRoot,
                              final Map<String,Set<URI>>    packageArtifacts,
                              final Map<String,Set<String>> packageDependencies,
-                             final Map<String,List<String>> packagePublicApis,
-                             final Map<String,Set<String>> classpathPackageDependencies,
+                             final Map<String,String>      packagePubapis,
                              int debugLevel,
                              boolean incremental,
                              int numCores,
-                             final PrintStream out,
-                             final PrintStream err)
+                             PrintStream out,
+                             PrintStream err)
     {
         boolean rc = true;
         boolean concurrentCompiles = true;
 
         // Fetch the id.
-        final String id = Util.extractStringOption("id", sjavac.serverSettings());
+        String id = Util.extractStringOption("id", serverSettings);
+        if (id == null || id.equals("")) {
+            // No explicit id set. Create a random id so that the requests can be
+            // grouped properly in the server.
+            id = "id"+(((new Random()).nextLong())&Long.MAX_VALUE);
+        }
         // Only keep portfile and sjavac settings..
-        String psServerSettings = Util.cleanSubOptions(Util.set("portfile","sjavac","background","keepalive"), sjavac.serverSettings());
+        String psServerSettings = Util.cleanSubOptions("--server:", Util.set("portfile","sjavac","background","keepalive"), serverSettings);
 
         // Get maximum heap size from the server!
-        SysInfo sysinfo = sjavac.getSysInfo();
+        SysInfo sysinfo = JavacServer.connectGetSysInfo(psServerSettings, out, err);
         if (sysinfo.numCores == -1) {
-            Log.error("Could not query server for sysinfo! Check javac_server.stdouterr for exceptions");
+            Log.error("Could not query server for sysinfo!");
             return false;
         }
         int numMBytes = (int)(sysinfo.maxMemory / ((long)(1024*1024)));
@@ -104,20 +103,20 @@ public class CompileJavaPackages implements Transformer {
         if (numCores <= 0) {
             // Set the requested number of cores to the number of cores on the server.
             numCores = sysinfo.numCores;
-            Log.debug("Number of compiler threads in pool is not explicitly set, defaulting to "+sysinfo.numCores);
+            Log.debug("Number of jobs not explicitly set, defaulting to "+sysinfo.numCores);
+        } else if (sysinfo.numCores < numCores) {
+            // Set the requested number of cores to the number of cores on the server.
+            Log.debug("Limiting jobs from explicitly set "+numCores+" to cores available on server: "+sysinfo.numCores);
+            numCores = sysinfo.numCores;
         } else {
-            Log.debug("Number of compiler threads in pool explicitly set to "+numCores);
+            Log.debug("Number of jobs explicitly set to "+numCores);
         }
         // More than three concurrent cores does not currently give a speedup, at least for compiling the jdk
         // in the OpenJDK. This will change in the future.
-        int numCompiles = args.getNumCompileChunks();
-        if (numCompiles <= 0) {
-            numCompiles = numCores;
-            // If numCompileChunks not explicitly set using -jj, then max out.
-            if (numCompiles > limitOnConcurrency) numCompiles = limitOnConcurrency;
-        }
-
+        int numCompiles = numCores;
+        if (numCores > limitOnConcurrency) numCompiles = limitOnConcurrency;
         // Split the work up in chunks to compiled.
+
         int numSources = 0;
         for (String s : pkgSrcs.keySet()) {
             Set<URI> ss = pkgSrcs.get(s);
@@ -202,9 +201,12 @@ public class CompileJavaPackages implements Transformer {
         }
 
         // The return values for each chunked compile.
-        final CompilationResult[] rn = new CompilationResult[numCompiles];
+        final int[] rn = new int[numCompiles];
         // The requets, might or might not run as a background thread.
         final Thread[] requests  = new Thread[numCompiles];
+
+        final Set<URI>             fvisible_sources = visibleSources;
+        final Map<URI,Set<String>> fvisible_classes = visibleClasses;
 
         long start = System.currentTimeMillis();
 
@@ -212,19 +214,24 @@ public class CompileJavaPackages implements Transformer {
             final int ii = i;
             final CompileChunk cc = compileChunks[i];
 
-            requests[i] = new Thread() {
+            // Pass the num_cores and the id (appended with the chunk number) to the server.
+            final String cleanedServerSettings = psServerSettings+",poolsize="+numCores+",id="+id+"-"+ii;
+            final PrintStream fout = out;
+            final PrintStream ferr = err;
+
+            requests[ii] = new Thread() {
                 @Override
                 public void run() {
-                    rn[ii] = sjavac.compile("n/a",
-                                                  id + "-" + ii,
-                                                  args.prepJavacArgs(),
-                                                  Collections.<File>emptyList(),
-                                                  cc.srcs,
-                                                  visibleSources);
-                    packageArtifacts.putAll(rn[ii].packageArtifacts);
-                    packageDependencies.putAll(rn[ii].packageDependencies);
-                    packagePublicApis.putAll(rn[ii].packagePublicApis);
-                    classpathPackageDependencies.putAll(rn[ii].classpathPackageDependencies);
+                                        rn[ii] = JavacServer.useServer(cleanedServerSettings,
+                                                           Main.removeWrapperArgs(args),
+                                                               cc.srcs,
+                                                           fvisible_sources,
+                                                           fvisible_classes,
+                                                           packageArtifacts,
+                                                           packageDependencies,
+                                                           packagePubapis,
+                                                           null,
+                                                           fout, ferr);
                 }
             };
 
@@ -246,9 +253,7 @@ public class CompileJavaPackages implements Transformer {
                 else {
                     requests[ii].run();
                     // If there was an error, then stop early when running single threaded.
-                    if (rn[i].returnCode != 0) {
-                        Log.info(rn[i].stdout);
-                        Log.error(rn[i].stderr);
+                    if (rn[i] != 0) {
                         return false;
                     }
                 }
@@ -264,9 +269,7 @@ public class CompileJavaPackages implements Transformer {
         // Check the return values.
         for (int i=0; i<numCompiles; ++i) {
             if (compileChunks[i].srcs.size() > 0) {
-                if (rn[i].returnCode != 0) {
-                    Log.info(rn[i].stdout);
-                    Log.error(rn[i].stderr);
+                if (rn[i] != 0) {
                     rc = false;
                 }
             }

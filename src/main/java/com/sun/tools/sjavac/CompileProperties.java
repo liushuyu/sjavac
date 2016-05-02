@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,8 +22,7 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-/* Contains sources copyright Fredrik Öhrström 2014, 
- * licensed from Fredrik to you under the above license. */
+
 package com.sun.tools.sjavac;
 
 import java.io.*;
@@ -38,20 +37,18 @@ import java.util.Set;
 import java.util.HashSet;
 import java.util.Map;
 
-import com.sun.tools.sjavac.options.Options;
-import com.sun.tools.sjavac.server.Sjavac;
-
 /**
  * Compile properties transform a properties file into a Java source file.
  * Java has built in support for reading properties from either a text file
  * in the source or a compiled java source file.
  *
- *  <p><b>This is NOT part of any supported API.
- *  If you write code that depends on this, you do so at your own risk.
- *  This code and its internal interfaces are subject to change or
- *  deletion without notice.</b>
+ * <p><b>This is NOT part of any supported API.
+ * If you write code that depends on this, you do so at your own
+ * risk.  This code and its internal interfaces are subject to change
+ * or deletion without notice.</b></p>
  */
-public class CompileProperties implements Transformer {
+public class CompileProperties implements Transformer
+{
     // Any extra information passed from the command line, for example if:
     // -tr .proppp=com.sun.tools.javac.smart.CompileProperties,sun.util.resources.LocaleNamesBundle
     // then extra will be "sun.util.resources.LocaleNamesBundle"
@@ -61,19 +58,17 @@ public class CompileProperties implements Transformer {
         extra = e;
     }
 
-    public void setExtra(Options a) {
+    public void setExtra(String[] a) {
     }
 
-    public boolean transform(Sjavac sjavac,
-                             Map<String,Set<URI>> pkgSrcs,
+    public boolean transform(Map<String,Set<URI>> pkgSrcs,
                              Set<URI>             visibleSrcs,
                              Map<URI,Set<String>> visibleClasses,
                              Map<String,Set<String>> oldPackageDependents,
                              URI destRoot,
                              Map<String,Set<URI>>    packageArtifacts,
                              Map<String,Set<String>> packageDependencies,
-                             Map<String,List<String>> packagePublicApis,
-                             Map<String,Set<String>> classpathPackageDependencies,
+                             Map<String,String>      packagePublicApis,
                              int debugLevel,
                              boolean incremental,
                              int numCores,
@@ -116,7 +111,7 @@ public class CompileProperties implements Transformer {
         String classname = src.getName().substring(0,dp);
 
         // Sort the properties in increasing key order.
-        List<String> sortedKeys = new ArrayList<>();
+        List<String> sortedKeys = new ArrayList<String>();
         for (Object key : p.keySet()) {
             sortedKeys.add((String)key);
         }
@@ -145,7 +140,7 @@ public class CompileProperties implements Transformer {
 
         Set<URI> as = packageArtifacts.get(pkgName);
         if (as == null) {
-            as = new HashSet<>();
+            as = new HashSet<URI>();
             packageArtifacts.put(pkgName, as);
         }
         as.add(dest.toURI());

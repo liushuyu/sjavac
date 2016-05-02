@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -29,48 +29,46 @@ import java.io.*;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 
-import com.sun.tools.sjavac.options.Options;
-import com.sun.tools.sjavac.server.Sjavac;
-
 /**
  * The clean properties transform should not be necessary.
  * Eventually we will cleanup the property file sources in the OpenJDK instead.
  *
- *  <p><b>This is NOT part of any supported API.
- *  If you write code that depends on this, you do so at your own risk.
- *  This code and its internal interfaces are subject to change or
- *  deletion without notice.</b>
+ * <p><b>This is NOT part of any supported API.
+ * If you write code that depends on this, you do so at your own
+ * risk.  This code and its internal interfaces are subject to change
+ * or deletion without notice.</b></p>
  */
-public class CleanProperties implements Transformer {
+public class CleanProperties implements Transformer
+{
     public void setExtra(String e) {
         // Any extra information is ignored for clean properties.
     }
 
-    public void setExtra(Options a) {
+    public void setExtra(String[] a) {
         // Any extra information is ignored for clean properties.
     }
 
-    public boolean transform(Sjavac sjavac,
-                             Map<String,Set<URI>> pkgSrcs,
+    public boolean transform(Map<String,Set<URI>> pkgSrcs,
                              Set<URI>             visibleSrcs,
                              Map<URI,Set<String>> visibleClasses,
                              Map<String,Set<String>> oldPackageDependencies,
                              URI destRoot,
                              Map<String,Set<URI>>    packageArtifacts,
                              Map<String,Set<String>> packageDependencies,
-                             Map<String,List<String>> packagePublicApis,
-                             Map<String,Set<String>> classpathPackageDependencies,
+                             Map<String,String>      packagePublicApis,
                              int debugLevel,
                              boolean incremental,
                              int numCores,
                              PrintStream out,
-                             PrintStream err) {
+                             PrintStream err)
+    {
         boolean rc = true;
         for (String pkgName : pkgSrcs.keySet()) {
             String pkgNameF = pkgName.replace('.',File.separatorChar);
@@ -86,12 +84,9 @@ public class CleanProperties implements Transformer {
         return rc;
     }
 
-    boolean clean(String pkgName,
-                  String pkgNameF,
-                  File src,
-                  File destRoot,
-                  int debugLevel,
-                  Map<String,Set<URI>> packageArtifacts) {
+    boolean clean(String pkgName, String pkgNameF, File src, File destRoot, int debugLevel,
+                  Map<String,Set<URI>> packageArtifacts)
+    {
         // Load the properties file.
         Properties p = new Properties();
         try {
@@ -102,19 +97,18 @@ public class CleanProperties implements Transformer {
         }
 
         // Sort the properties in increasing key order.
-        List<String> sortedKeys = new ArrayList<>();
+        List<String> sortedKeys = new ArrayList<String>();
         for (Object key : p.keySet()) {
             sortedKeys.add((String)key);
         }
         Collections.sort(sortedKeys);
+        Iterator<String> keys = sortedKeys.iterator();
 
         // Collect the properties into a string buffer.
         StringBuilder data = new StringBuilder();
-        for (String key : sortedKeys) {
-            data.append(CompileProperties.escape(key))
-                .append(":")
-                .append(CompileProperties.escape((String) p.get(key)))
-                .append("\n");
+        while (keys.hasNext()) {
+            String key = keys.next();
+            data.append(CompileProperties.escape(key)+":"+CompileProperties.escape((String)p.get(key))+"\n");
         }
 
         String destFilename = destRoot.getPath()+File.separator+pkgNameF+File.separator+src.getName();
@@ -130,7 +124,7 @@ public class CleanProperties implements Transformer {
 
         Set<URI> as = packageArtifacts.get(pkgName);
         if (as == null) {
-            as = new HashSet<>();
+            as = new HashSet<URI>();
             packageArtifacts.put(pkgName, as);
         }
         as.add(dest.toURI());

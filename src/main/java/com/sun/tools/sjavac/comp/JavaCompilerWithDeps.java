@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,8 +22,6 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-/* Contains sources copyright Fredrik Öhrström 2014, 
- * licensed from Fredrik to you under the above license. */
 package com.sun.tools.sjavac.comp;
 
 import java.util.StringTokenizer;
@@ -31,32 +29,34 @@ import java.util.StringTokenizer;
 import com.sun.tools.javac.main.JavaCompiler;
 import com.sun.tools.javac.util.Context;
 import com.sun.tools.javac.code.Symbol.ClassSymbol;
+import com.sun.tools.sjavac.server.CompilerThread;
+import java.io.File;
 
 /** Subclass to Resolve that overrides collect.
  *
- *  <p><b>This is NOT part of any supported API.
- *  If you write code that depends on this, you do so at your own risk.
- *  This code and its internal interfaces are subject to change or
- *  deletion without notice.</b>
+ * <p><b>This is NOT part of any supported API.
+ * If you write code that depends on this, you do so at your own
+ * risk.  This code and its internal interfaces are subject to change
+ * or deletion without notice.</b></p>
  */
 public class JavaCompilerWithDeps extends JavaCompiler {
 
     /** The dependency database
      */
     protected Dependencies deps;
-    protected SjavacErrorHandler errorHandler;
+    protected CompilerThread compilerThread;
 
-    public JavaCompilerWithDeps(Context context, SjavacErrorHandler eh) {
+    public JavaCompilerWithDeps(Context context, CompilerThread t) {
         super(context);
         deps = Dependencies.instance(context);
-        errorHandler = eh;
+        compilerThread = t;
         needRootClasses = true;
     }
 
-    public static void preRegister(Context context, final SjavacErrorHandler eh) {
+    public static void preRegister(Context context, final CompilerThread t) {
         context.put(compilerKey, new Context.Factory<JavaCompiler>() {
             public JavaCompiler make(Context c) {
-                JavaCompiler instance = new JavaCompilerWithDeps(c, eh);
+                JavaCompiler instance = new JavaCompilerWithDeps(c, t);
                 c.put(JavaCompiler.class, instance);
                 return instance;
             }
@@ -99,11 +99,11 @@ public class JavaCompilerWithDeps extends JavaCompiler {
 
             // Now check if the truncated uri ends with the path. (It does not == failure!)
             if (path.length() > 0 && !path.equals("/unnamed package/") && !pp.endsWith(path)) {
-                errorHandler.logError("Error: The source file "+sym.sourcefile.getName()+
+                compilerThread.logError("Error: The source file "+sym.sourcefile.getName()+
                                         " is located in the wrong package directory, because it contains the class "+
                                         sym.getQualifiedName());
             }
         }
-        deps.visitPubapiOfSource(sym);
+        deps.visitPubapi(sym);
     }
 }

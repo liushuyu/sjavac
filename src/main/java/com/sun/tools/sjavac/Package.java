@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,8 +22,7 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-/* Contains sources copyright Fredrik Öhrström 2014, 
- * licensed from Fredrik to you under the above license. */
+
 package com.sun.tools.sjavac;
 
 import java.io.File;
@@ -36,7 +35,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import com.sun.tools.javac.util.Assert;
 
 /**
  * The Package class maintains meta information about a package.
@@ -56,10 +54,10 @@ import com.sun.tools.javac.util.Assert;
  * the visible recompilation of the dependent packages indicates how much circular
  * dependencies your code has.
  *
- *  <p><b>This is NOT part of any supported API.
- *  If you write code that depends on this, you do so at your own risk.
- *  This code and its internal interfaces are subject to change or
- *  deletion without notice.</b>
+ * <p><b>This is NOT part of any supported API.
+ * If you write code that depends on this, you do so at your own
+ * risk.  This code and its internal interfaces are subject to change
+ * or deletion without notice.</b></p>
  */
 public class Package implements Comparable<Package> {
     // The module this package belongs to. (There is a legacy module with an empty string name,
@@ -73,25 +71,21 @@ public class Package implements Comparable<Package> {
     // then that module's file system name is part of the path.
     private String dirname;
     // This package depends on these packages.
-    private Set<String> dependencies = new HashSet<>();
+    private Set<String> dependencies = new HashSet<String>();
     // This package has the following dependents, that depend on this package.
-    private Set<String> dependents = new HashSet<>();
+    private Set<String> dependents = new HashSet<String>();
+    // This is the public api of this package.
+    private List<String> pubapi = new ArrayList<String>();
     // Map from source file name to Source info object.
-    private Map<String,Source> sources = new HashMap<>();
+    private Map<String,Source> sources = new HashMap<String,Source>();
     // This package generated these artifacts.
-    private Map<String,File> artifacts = new HashMap<>();
-    // Pubapi for compiled sources
-    private List<String> pubapi_for_compiled_sources = new ArrayList<>();
-    // Pubapi for linked classes
-    private List<String> pubapi_for_linked_classes = new ArrayList<>();
-    // Archives that have the same timestamp as previous run, ie they are probably unchanged.
-    private Set<String> unchanged_archives = new HashSet<>();
+    private Map<String,File> artifacts = new HashMap<String,File>();
 
     public Package(Module m, String n) {
         int c = n.indexOf(":");
-        Assert.check(c != -1);
+        assert(c != -1);
         String mn = n.substring(0,c);
-        Assert.check(m.name().equals(m.name()));
+        assert(m.name().equals(m.name()));
         name = n;
         dirname = n.replace('.', File.separatorChar);
         if (m.name().length() > 0) {
@@ -105,8 +99,7 @@ public class Package implements Comparable<Package> {
     public String dirname() { return dirname; }
     public Map<String,Source> sources() { return sources; }
     public Map<String,File> artifacts() { return artifacts; }
-    public List<String> pubapiForCompiledSources() { return pubapi_for_compiled_sources; }
-    public List<String> pubapiForLinkedClasses() { return pubapi_for_linked_classes; }
+    public List<String> pubapi() { return pubapi; }
 
     public Set<String> dependencies() { return dependencies; }
     public Set<String> dependents() { return dependents; }
@@ -138,17 +131,31 @@ public class Package implements Comparable<Package> {
         dependents.add(d);
     }
 
+    public void addPubapi(String p) {
+        pubapi.add(p);
+    }
+
     /**
      * Check if we have knowledge in the javac state that
      * describe the results of compiling this package before.
      */
     public boolean existsInJavacState() {
-        return artifacts.size() > 0 || pubapi_for_compiled_sources.size() > 0;
+        return artifacts.size() > 0 || pubapi.size() > 0;
     }
 
-    public boolean hasPubapiForCompiledSourcesChanged(List<String> ps) {
+    public static List<String> pubapiToList(String ps)
+    {
+        String[] lines = ps.split("\n");
+        List<String> r = new ArrayList<String>();
+        for (String l : lines) {
+            r.add(l);
+        }
+        return r;
+    }
+
+    public boolean hasPubapiChanged(List<String> ps) {
         Iterator<String> i = ps.iterator();
-        Iterator<String> j = pubapi_for_compiled_sources.iterator();
+        Iterator<String> j = pubapi.iterator();
         int line = 0;
         while (i.hasNext() && j.hasNext()) {
             String is = i.next();
@@ -174,12 +181,8 @@ public class Package implements Comparable<Package> {
         return false;
     }
 
-    public void setPubapiForCompiledSources(List<String> ps) {
-        pubapi_for_compiled_sources = ps;
-    }
-
-    public void setPubapiForLinkedClasses(List<String> ps) {
-        pubapi_for_linked_classes = ps;
+    public void setPubapi(List<String> ps) {
+        pubapi = ps;
     }
 
     public void setDependencies(Set<String> ds) {
@@ -205,18 +208,12 @@ public class Package implements Comparable<Package> {
     }
 
     public void loadPubapi(String l) {
-        char c = l.charAt(2);
-        String pi = l.substring(4);
-        switch (c) {
-        case 'C' :  pubapi_for_compiled_sources.add(pi);
-            break;
-        case 'Z' :  pubapi_for_linked_classes.add(pi);
-            break;
-        }
+        String pi = l.substring(2);
+        addPubapi(pi);
     }
 
     public void saveDependencies(StringBuilder b) {
-        List<String> sorted_dependencies = new ArrayList<>();
+        List<String> sorted_dependencies = new ArrayList<String>();
         for (String key : dependencies) {
             sorted_dependencies.add(key);
         }
@@ -227,40 +224,18 @@ public class Package implements Comparable<Package> {
     }
 
     public void savePubapi(StringBuilder b) {
-        for (String l : pubapi_for_compiled_sources) {
-            b.append("I C "+l+"\n");
-        }
-        for (String l : pubapi_for_linked_classes) {
-            b.append("I Z "+l+"\n");
+        for (String l : pubapi) {
+            b.append("I "+l+"\n");
         }
     }
 
     public static void savePackages(Map<String,Package> packages, StringBuilder b) {
-        List<String> sorted_source_packages = new ArrayList<>();
-        // First add all packages that have components from from our own sources.
+        List<String> sorted_packages = new ArrayList<String>();
         for (String key : packages.keySet() ) {
-            Package p = packages.get(key);
-            if (p.sources().size() > 0) {
-                sorted_source_packages.add(key);
+            sorted_packages.add(key);
         }
-        }
-        Collections.sort(sorted_source_packages);
-
-        List<String> sorted_classpath_packages = new ArrayList<>();
-        // Second add all packages found on the classpath only.
-        for (String key : packages.keySet() ) {
-            Package p = packages.get(key);
-            if (p.sources().size() == 0) {
-                sorted_classpath_packages.add(key);
-            }
-        }
-        Collections.sort(sorted_classpath_packages);
-
-        for (String s : sorted_source_packages) {
-            Package p = packages.get(s);
-            p.save(b);
-        }
-        for (String s : sorted_classpath_packages) {
+        Collections.sort(sorted_packages);
+        for (String s : sorted_packages) {
             Package p = packages.get(s);
             p.save(b);
         }
@@ -281,8 +256,8 @@ public class Package implements Comparable<Package> {
     }
 
     public void setArtifacts(Set<URI> as) {
-        Assert.check(!artifacts.isEmpty());
-        artifacts = new HashMap<>();
+        assert(!artifacts.isEmpty());
+        artifacts = new HashMap<String,File>();
         addArtifacts(as);
     }
 
@@ -304,7 +279,7 @@ public class Package implements Comparable<Package> {
     }
 
     public void saveArtifacts(StringBuilder b) {
-        List<File> sorted_artifacts = new ArrayList<>();
+        List<File> sorted_artifacts = new ArrayList<File>();
         for (File f : artifacts.values()) {
             sorted_artifacts.add(f);
         }
@@ -329,20 +304,4 @@ public class Package implements Comparable<Package> {
             a.delete();
         }
     }
-
-    /**
-     * Extract the classes stored in the pubapi.
-     */
-    public Set<String> getClassesFromClasspathPubapi() {
-        Set<String> set = new HashSet<String>();
-
-        for (String s : pubapi_for_linked_classes) {
-            if (s.startsWith(" TYPE ")) {
-                set.add(s.substring(6, s.indexOf(' ', 6)));
-            }
-        }
-        return set;
-    }
-
-
 }

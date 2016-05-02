@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,8 +22,7 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-/* Contains sources copyright Fredrik Öhrström 2014, 
- * licensed from Fredrik to you under the above license. */
+
 package com.sun.tools.sjavac;
 
 import java.io.*;
@@ -38,22 +37,17 @@ import java.text.SimpleDateFormat;
 import java.net.URI;
 import java.util.*;
 
-import com.sun.tools.sjavac.comp.SjavacImpl;
-import com.sun.tools.sjavac.options.Options;
-import com.sun.tools.sjavac.options.SourceLocation;
-import com.sun.tools.sjavac.server.Sjavac;
-import com.sun.tools.sjavac.server.PublicApiResult;
-
 /**
  * The javac state class maintains the previous (prev) and the current (now)
  * build states and everything else that goes into the javac_state file.
  *
- *  <p><b>This is NOT part of any supported API.
- *  If you write code that depends on this, you do so at your own risk.
- *  This code and its internal interfaces are subject to change or
- *  deletion without notice.</b>
+ * <p><b>This is NOT part of any supported API.
+ * If you write code that depends on this, you do so at your own
+ * risk.  This code and its internal interfaces are subject to change
+ * or deletion without notice.</b></p>
  */
-public class JavacState {
+public class JavacState
+{
     // The arguments to the compile. If not identical, then it cannot
     // be an incremental build!
     String theArgs;
@@ -61,6 +55,7 @@ public class JavacState {
     int numCores;
 
     // The bin_dir/javac_state
+    private String javacStateFilename;
     private File javacState;
 
     // The previous build state is loaded from javac_state
@@ -97,12 +92,9 @@ public class JavacState {
     // Copy over the javac_state for the packages that did not need recompilation,
     // verbatim from the previous (prev) to the new (now) build state.
     private Set<String> recompiledPackages;
-    // The set of all classpath packages and their classes, 
-    // for which either the timestamps or the pubapi have changed. 
-    private Map<String,Set<String>> changedClasspathPackages;
 
     // The output directories filled with tasty artifacts.
-    private File binDir, gensrcDir, headerDir, stateDir;
+    private File binDir, gensrcDir, headerDir;
 
     // The current status of the file system.
     private Set<File> binArtifacts;
@@ -125,26 +117,27 @@ public class JavacState {
     // It can also map from a jar file to the set of visible classes for that jar file.
     Map<URI,Set<String>> visibleClasses;
 
-    // Setup transform that always exist.
+    // Setup two transforms that always exist.
+    private CopyFile            copyFiles = new CopyFile();
     private CompileJavaPackages compileJavaPackages = new CompileJavaPackages();
 
     // Where to send stdout and stderr.
     private PrintStream out, err;
 
-    // Command line options.
-    private Options options;
-
-    JavacState(Options op, boolean removeJavacState, PrintStream o, PrintStream e) {
-        options = op;
+    JavacState(String[] args, File bd, File gd, File hd, boolean permitUnidentifiedArtifacts, boolean removeJavacState,
+            PrintStream o, PrintStream e) {
         out = o;
         err = e;
-        numCores = options.getNumCores();
-        theArgs = options.getStateArgsString();
-        binDir = Util.pathToFile(options.getDestDir());
-        gensrcDir = Util.pathToFile(options.getGenSrcDir());
-        headerDir = Util.pathToFile(options.getHeaderDir());
-        stateDir = Util.pathToFile(options.getStateDir());
-        javacState = new File(stateDir, "javac_state");
+        numCores = Main.findNumberOption(args, "-j");
+        theArgs = "";
+        for (String a : removeArgsNotAffectingState(args)) {
+            theArgs = theArgs+a+" ";
+        }
+        binDir = bd;
+        gensrcDir = gd;
+        headerDir = hd;
+        javacStateFilename = binDir.getPath()+File.separator+"javac_state";
+        javacState = new File(javacStateFilename);
         if (removeJavacState && javacState.exists()) {
             javacState.delete();
         }
@@ -155,7 +148,7 @@ public class JavacState {
             // We do not want to risk building a broken incremental build.
             // BUT since the makefiles still copy things straight into the bin_dir et al,
             // we avoid deleting files here, if the option --permit-unidentified-classes was supplied.
-            if (!options.areUnidentifiedArtifactsPermitted()) {
+            if (!permitUnidentifiedArtifacts) {
                 deleteContents(binDir);
                 deleteContents(gensrcDir);
                 deleteContents(headerDir);
@@ -164,10 +157,9 @@ public class JavacState {
         }
         prev = new BuildState();
         now = new BuildState();
-        taintedPackages = new HashSet<>();
-        recompiledPackages = new HashSet<>();
-        changedClasspathPackages = new HashMap<>();
-        packagesWithChangedPublicApis = new HashSet<>();
+        taintedPackages = new HashSet<String>();
+        recompiledPackages = new HashSet<String>();
+        packagesWithChangedPublicApis = new HashSet<String>();
     }
 
     public BuildState prev() { return prev; }
@@ -205,7 +197,7 @@ public class JavacState {
      * Specify which sources are visible to the compiler through -sourcepath.
      */
     public void setVisibleSources(Map<String,Source> vs) {
-        visibleSrcs = new HashSet<>();
+        visibleSrcs = new HashSet<URI>();
         for (String s : vs.keySet()) {
             Source src = vs.get(s);
             visibleSrcs.add(src.file().toURI());
@@ -216,7 +208,7 @@ public class JavacState {
      * Specify which classes are visible to the compiler through -classpath.
      */
     public void setVisibleClasses(Map<String,Source> vs) {
-        visibleSrcs = new HashSet<>();
+        visibleSrcs = new HashSet<URI>();
         for (String s : vs.keySet()) {
             Source src = vs.get(s);
             visibleSrcs.add(src.file().toURI());
@@ -246,7 +238,7 @@ public class JavacState {
         if (p != null) {
             return p.artifacts();
         }
-        return new HashMap<>();
+        return new HashMap<String,File>();
     }
 
     /**
@@ -275,18 +267,14 @@ public class JavacState {
      * Save the javac_state file.
      */
     public void save() throws IOException {
-        if (!needsSaving) {
-            Log.debug("No changes detected in sources, javac_state was not touched.");
-            return;
-        }
-        Log.debug("Saving the javac_state file.");
-        try (FileWriter out = new FileWriter(javacState)) {
+        if (!needsSaving) return;
+        try (FileWriter out = new FileWriter(javacStateFilename)) {
             StringBuilder b = new StringBuilder();
             long millisNow = System.currentTimeMillis();
             Date d = new Date(millisNow);
             SimpleDateFormat df =
                 new SimpleDateFormat("yyyy-MM-dd HH:mm:ss SSS");
-            b.append("# javac_state ver 0.4 generated "+millisNow+" "+df.format(d)+"\n");
+            b.append("# javac_state ver 0.3 generated "+millisNow+" "+df.format(d)+"\n");
             b.append("# This format might change at any time. Please do not depend on it.\n");
             b.append("# M module\n");
             b.append("# P package\n");
@@ -295,38 +283,15 @@ public class JavacState {
             b.append("# G C generated_source timestamp\n");
             b.append("# A artifact timestamp\n");
             b.append("# D dependency\n");
-            b.append("# I C pubapi when compiled from source\n");
-            // The pubapi of compiled source is extracted almost for free when
-            // the compilation is done.
-            // 
-            // Should we have pubapi when linked from source?
-            // No, because a linked source might not be entirely compiled because of
-            // performance reasons, thus the full pubapi might not be available for free.
-            // Instead, monitor the timestamp of linked sources, when the timestamp change
-            // always force a recompile of dependents even though it might not be necessary.
-            b.append("# I Z pubapi when linked as classes\n");
-            // The pubapi of linked classes can easily be constructed from the referenced classes.
-            // However this pubapi contains only a subset of the classes actually public in the package.
-            // Because: 1) we cannot easily find all classes 2) we do not want to, we are satisfied in
-            // only tracking the actually referred classes.
-            b.append("# Z archive timestamp\n");
-            // When referred classes are stored in a jar/zip, use this timestamp to shortcut
-            // and avoid testing all internal classes in the jar, if the timestamp of the jar itself
-            // is unchanged.
+            b.append("# I pubapi\n");
             b.append("# R arguments\n");
             b.append("R ").append(theArgs).append("\n");
 
             // Copy over the javac_state for the packages that did not need recompilation.
             now.copyPackagesExcept(prev, recompiledPackages, new HashSet<String>());
-            // Recreate pubapi:s and timestamps for classpath packages that have changed.
-            long start = System.currentTimeMillis();
-            addToClasspathPubapis(changedClasspathPackages);
-            long stop = System.currentTimeMillis();
-            Log.timing("Extracting classpath public apis took "+(stop-start)+"ms");
-            // Save the packages, ie package names, dependencies, pubapis and artifacts! I.e. the lot.
+            // Save the packages, ie package names, dependencies, pubapis and artifacts!
+            // I.e. the lot.
             Module.saveModules(now.modules(), b);
-            // Save the archive timestamps.
-            now.saveArchiveTimestamps(b);
 
             String s = b.toString();
             out.write(s, 0, s.length());
@@ -336,8 +301,9 @@ public class JavacState {
     /**
      * Load a javac_state file.
      */
-    public static JavacState load(Options options, PrintStream out, PrintStream err) {
-        JavacState db = new JavacState(options, false, out, err);
+    public static JavacState load(String[] args, File binDir, File gensrcDir, File headerDir,
+            boolean permitUnidentifiedArtifacts, PrintStream out, PrintStream err) {
+        JavacState db = new JavacState(args, binDir, gensrcDir, headerDir, permitUnidentifiedArtifacts, false, out, err);
         Module  lastModule = null;
         Package lastPackage = null;
         Source  lastSource = null;
@@ -346,7 +312,7 @@ public class JavacState {
         boolean newCommandLine = false;
         boolean syntaxError = false;
 
-        try (BufferedReader in = new BufferedReader(new FileReader(db.javacState))) {
+        try (BufferedReader in = new BufferedReader(new FileReader(db.javacStateFilename))) {
             for (;;) {
                 String l = in.readLine();
                 if (l==null) break;
@@ -366,9 +332,6 @@ public class JavacState {
                     if (c == 'I') {
                         if (lastModule == null || lastPackage == null) { syntaxError = true; break; }
                         lastPackage.loadPubapi(l);
-                    } else
-                    if (c == 'Z') {
-                        db.prev.loadArchiveTimestamp(l);
                     } else
                     if (c == 'A') {
                         if (lastModule == null || lastPackage == null) { syntaxError = true; break; }
@@ -393,7 +356,7 @@ public class JavacState {
                             int sp = l.indexOf(" ", 18);
                             if (sp != -1) {
                                 String ver = l.substring(18,sp);
-                                if (!ver.equals("0.4")) {
+                                if (!ver.equals("0.3")) {
                     break;
                                  }
                 foundCorrectVerNr = true;
@@ -407,22 +370,22 @@ public class JavacState {
             noFileFound = true;
         } catch (IOException e) {
             Log.info("Dropping old javac_state because of errors when reading it.");
-            db = new JavacState(options, true, out, err);
+            db = new JavacState(args, binDir, gensrcDir, headerDir, permitUnidentifiedArtifacts, true, out, err);
             foundCorrectVerNr = true;
             newCommandLine = false;
             syntaxError = false;
     }
         if (foundCorrectVerNr == false && !noFileFound) {
             Log.info("Dropping old javac_state since it is of an old version.");
-            db = new JavacState(options, true, out, err);
+            db = new JavacState(args, binDir, gensrcDir, headerDir, permitUnidentifiedArtifacts, true, out, err);
         } else
         if (newCommandLine == true && !noFileFound) {
             Log.info("Dropping old javac_state since a new command line is used!");
-            db = new JavacState(options, true, out, err);
+            db = new JavacState(args, binDir, gensrcDir, headerDir, permitUnidentifiedArtifacts, true, out, err);
         } else
         if (syntaxError == true) {
             Log.info("Dropping old javac_state since it contains syntax errors.");
-            db = new JavacState(options, true, out, err);
+            db = new JavacState(args, binDir, gensrcDir, headerDir, permitUnidentifiedArtifacts, true, out, err);
         }
         db.prev.calculateDependents();
         return db;
@@ -447,7 +410,7 @@ public class JavacState {
     }
 
     /**
-     * These packages need recompilation.
+     * This packages need recompilation.
      */
     public Set<String> taintedPackages() {
         return taintedPackages;
@@ -458,7 +421,7 @@ public class JavacState {
      * prior to propagating dependencies.
      */
     public void clearTaintedPackages() {
-        taintedPackages = new HashSet<>();
+        taintedPackages = new HashSet<String>();
     }
 
     /**
@@ -499,11 +462,17 @@ public class JavacState {
      * Acquire the compile_java_packages suffix rule for .java files.
      */
     public Map<String,Transformer> getJavaSuffixRule() {
-        Map<String,Transformer> sr = new HashMap<>();
+        Map<String,Transformer> sr = new HashMap<String,Transformer>();
         sr.put(".java", compileJavaPackages);
         return sr;
     }
 
+    /**
+     * Acquire the copying transform.
+     */
+    public Transformer getCopier() {
+        return copyFiles;
+    }
 
     /**
      * If artifacts have gone missing, force a recompile of the packages
@@ -536,108 +505,11 @@ public class JavacState {
     }
 
     /**
-     * Compare the javac_state recorded public apis of packages on the classpath
-     * with the actual public apis on the classpath.
-     */
-    public void taintPackagesDependingOnChangedClasspathPackages() {
-        Sjavac comp = new SjavacImpl(options);
-        Set<String> tainteds = new HashSet<String>();
-        
-        for (Package pkg : prev.packages().values()) {
-            List<String> current = new ArrayList<String>();
-            Iterator<String> i = current.iterator();
-            boolean tainted = false;
-            boolean skip = false;
-            for (String s : pkg.pubapiForLinkedClasses()) {
-                if (skip && !s.startsWith("PUBAPI ")) {
-                    // Skipping, because timestamp or hash checked out ok. Assume no change here!
-                    continue;
-                }
-                skip = false;
-                // Check if we have found a new class.
-                if (s.startsWith("PUBAPI ")) {
-                    if (i.hasNext()) {
-                        // Previous api had not ended! Change is detected!
-                        tainted = true;
-                        break;
-                    }
-                    // Extract the class name, hash, file and timestamp from the PUBAPI line
-                    int p = s.indexOf(' ', 7);
-                    int pp = s.indexOf(' ', p+1);
-                    String cln = s.substring(7, p);
-                    String hash = s.substring(p+1, pp);
-                    String loc = s.substring(pp+1); // loc == file and timestamp
-                    String archive = Util.extractArchive(loc);
-                    if (archive != null && prev.archives().contains(archive)) {
-                        // If it existed, then the timestamp for the archive
-                        // is unchanged. Lets skip testing this class inside the archive!
-                        Log.debug("Assume "+cln+" unchanged since "+archive+" is unchanged");
-                        skip = true;
-                        current = new ArrayList<String>();
-                        i = current.iterator();
-                        continue;
-                    }
-                    // The archive timestamp has changed, or is new.
-                    // Compare the prev classLocInfo with the current classLocInfo
-                    String cmp = comp.getClassLoc(cln);
-                    if (cmp.equals(loc)) {
-                        // Equal means that the come from the same class/zip file
-                        // and the timestamp is the same. Assume equal!
-                        Log.debug("Assume "+cln+" unchanged since "+loc+" is unchanged");
-                        skip = true;
-                        current = new ArrayList<String>();
-                        i = current.iterator();
-                        continue;
-                    }
-                    // The timestamps differ, lets check the pubapi.
-                    Log.debug("Timestamp changed for "+cln+" now checking if pubapi is the same.");
-                    // Add the package to changedClasspathPackages because this
-                    // will trigger a regeneration the package information to javac_state
-                    // thus updating the timestamps.
-                    Util.addToMapSet(pkg.name(), cln, changedClasspathPackages);
-                    needsSaving = true;
-                    PublicApiResult r = comp.getPublicApi(cln);
-                    current = r.api;
-                    now.archives().addAll(r.archives);
-                    i = current.iterator();
-                }
-                if (i.hasNext()) {
-                    String ss = i.next();
-                    if (s.startsWith("PUBAPI ") && ss.startsWith("PUBAPI ")) {
-                        int p = s.indexOf(' ', 7);
-                        int pp = s.indexOf(' ', p+1);
-                        s = s.substring(0, pp);
-                        ss = ss.substring(0, pp);
-                        if (s.equals(ss)) {
-                            // The pubapi of a class has identical hash!
-                            // We assume it is equals!
-                            Log.debug("Assume "+s.substring(0, pp)+" unchanged since its hash is unchanged");
-                            skip = true;
-                            current = new ArrayList<String>();
-                            i = current.iterator();
-                        } else {
-                            // The pubapi hash is not identical! Change is detected!
-                            tainted = true;
-                        }
-                    } 
-                }
-            }
-            if (tainted) {
-                Log.info("The pubapi of "+Util.justPackageName(pkg.name())+" has changed!");
-                tainteds.add(pkg.name());
-            } else if (pkg.pubapiForLinkedClasses().size() > 0) {
-                Log.debug("The pubapi of "+Util.justPackageName(pkg.name())+" was unchanged!");
-            }
-        }
-        taintPackagesDependingOnChangedPackages(tainteds, new HashSet<String>());
-    }
-
-    /**
      * Scan all output dirs for artifacts and remove those files (artifacts?)
      * that are not recognized as such, in the javac_state file.
      */
     public void removeUnidentifiedArtifacts() {
-        Set<File> allKnownArtifacts = new HashSet<>();
+        Set<File> allKnownArtifacts = new HashSet<File>();
         for (Package pkg : prev.packages().values()) {
             for (File f : pkg.artifacts().values()) {
                 allKnownArtifacts.add(f);
@@ -647,8 +519,7 @@ public class JavacState {
         allKnownArtifacts.add(javacState);
 
         for (File f : binArtifacts) {
-            if (!allKnownArtifacts.contains(f) &&
-                !options.isUnidentifiedArtifactPermitted(f.getAbsolutePath())) {
+            if (!allKnownArtifacts.contains(f)) {
                 Log.debug("Removing "+f.getPath()+" since it is unknown to the javac_state.");
                 f.delete();
             }
@@ -691,7 +562,7 @@ public class JavacState {
      * Return those files belonging to prev, but not now.
      */
     private Set<Source> calculateRemovedSources() {
-        Set<Source> removed = new HashSet<>();
+        Set<Source> removed = new HashSet<Source>();
         for (String src : prev.sources().keySet()) {
             if (now.sources().get(src) == null) {
                 removed.add(prev.sources().get(src));
@@ -704,7 +575,7 @@ public class JavacState {
      * Return those files belonging to now, but not prev.
      */
     private Set<Source> calculateAddedSources() {
-        Set<Source> added = new HashSet<>();
+        Set<Source> added = new HashSet<Source>();
         for (String src : now.sources().keySet()) {
             if (prev.sources().get(src) == null) {
                 added.add(now.sources().get(src));
@@ -720,7 +591,7 @@ public class JavacState {
      * a warning!
      */
     private Set<Source> calculateModifiedSources() {
-        Set<Source> modified = new HashSet<>();
+        Set<Source> modified = new HashSet<Source>();
         for (String src : now.sources().keySet()) {
             Source n = now.sources().get(src);
             Source t = prev.sources().get(src);
@@ -741,16 +612,13 @@ public class JavacState {
     /**
      * Recursively delete a directory and all its contents.
      */
-    private void deleteContents(File dir) {
+    private static void deleteContents(File dir) {
         if (dir != null && dir.exists()) {
             for (File f : dir.listFiles()) {
                 if (f.isDirectory()) {
                     deleteContents(f);
                 }
-                if (!options.isUnidentifiedArtifactPermitted(f.getAbsolutePath())) {
-                    Log.debug("Removing "+f.getAbsolutePath());
-                    f.delete();
-                }
+                f.delete();
             }
         }
     }
@@ -759,13 +627,13 @@ public class JavacState {
      * Run the copy translator only.
      */
     public void performCopying(File binDir, Map<String,Transformer> suffixRules) {
-        Map<String,Transformer> sr = new HashMap<>();
+        Map<String,Transformer> sr = new HashMap<String,Transformer>();
         for (Map.Entry<String,Transformer> e : suffixRules.entrySet()) {
-            if (e.getValue().getClass().equals(CopyFile.class)) {
+            if (e.getValue() == copyFiles) {
                 sr.put(e.getKey(), e.getValue());
             }
         }
-        perform(null, binDir, sr);
+        perform(binDir, sr);
     }
 
     /**
@@ -773,34 +641,35 @@ public class JavacState {
      * I.e. all translators that are not copy nor compile_java_source.
      */
     public void performTranslation(File gensrcDir, Map<String,Transformer> suffixRules) {
-        Map<String,Transformer> sr = new HashMap<>();
+        Map<String,Transformer> sr = new HashMap<String,Transformer>();
         for (Map.Entry<String,Transformer> e : suffixRules.entrySet()) {
-            Class<?> trClass = e.getValue().getClass();
-            if (trClass == CompileJavaPackages.class || trClass == CopyFile.class)
-                continue;
-
-            sr.put(e.getKey(), e.getValue());
+            if (e.getValue() != copyFiles &&
+                e.getValue() != compileJavaPackages) {
+                sr.put(e.getKey(), e.getValue());
+            }
         }
-        perform(null, gensrcDir, sr);
+        perform(gensrcDir, sr);
     }
 
     /**
      * Compile all the java sources. Return true, if it needs to be called again!
      */
-    public boolean performJavaCompilations(Sjavac sjavac,
-                                           Options args,
+    public boolean performJavaCompilations(File binDir,
+                                           String serverSettings,
+                                           String[] args,
                                            Set<String> recentlyCompiled,
                                            boolean[] rcValue) {
-        Map<String,Transformer> suffixRules = new HashMap<>();
+        Map<String,Transformer> suffixRules = new HashMap<String,Transformer>();
         suffixRules.put(".java", compileJavaPackages);
+        compileJavaPackages.setExtra(serverSettings);
         compileJavaPackages.setExtra(args);
 
-        rcValue[0] = perform(sjavac, binDir, suffixRules);
+        rcValue[0] = perform(binDir, suffixRules);
         recentlyCompiled.addAll(taintedPackages());
         clearTaintedPackages();
         boolean again = !packagesWithChangedPublicApis.isEmpty();
         taintPackagesDependingOnChangedPackages(packagesWithChangedPublicApis, recentlyCompiled);
-        packagesWithChangedPublicApis = new HashSet<>();
+        packagesWithChangedPublicApis = new HashSet<String>();
         return again && rcValue[0];
     }
 
@@ -810,12 +679,12 @@ public class JavacState {
     private void addFileToTransform(Map<Transformer,Map<String,Set<URI>>> gs, Transformer t, Source s) {
         Map<String,Set<URI>> fs = gs.get(t);
         if (fs == null) {
-            fs = new HashMap<>();
+            fs = new HashMap<String,Set<URI>>();
             gs.put(t, fs);
         }
         Set<URI> ss = fs.get(s.pkg().name());
         if (ss == null) {
-            ss = new HashSet<>();
+            ss = new HashSet<URI>();
             fs.put(s.pkg().name(), ss);
         }
         ss.add(s.file().toURI());
@@ -825,12 +694,11 @@ public class JavacState {
      * For all packages, find all sources belonging to the package, group the sources
      * based on their transformers and apply the transformers on each source code group.
      */
-    private boolean perform(Sjavac sjavac,
-                            File outputDir,
-                            Map<String,Transformer> suffixRules) {
+    private boolean perform(File outputDir, Map<String,Transformer> suffixRules)
+    {
         boolean rc = true;
         // Group sources based on transforms. A source file can only belong to a single transform.
-        Map<Transformer,Map<String,Set<URI>>> groupedSources = new HashMap<>();
+        Map<Transformer,Map<String,Set<URI>>> groupedSources = new HashMap<Transformer,Map<String,Set<URI>>>();
         for (Source src : now.sources().values()) {
             Transformer t = suffixRules.get(src.suffix());
                if (t != null) {
@@ -844,19 +712,11 @@ public class JavacState {
             Transformer t = e.getKey();
             Map<String,Set<URI>> srcs = e.getValue();
             // These maps need to be synchronized since multiple threads will be writing results into them.
-            Map<String,Set<URI>> packageArtifacts =
-                    Collections.synchronizedMap(new HashMap<String,Set<URI>>());
-            Map<String,Set<String>> packageDependencies =
-                    Collections.synchronizedMap(new HashMap<String,Set<String>>());
-            Map<String,List<String>> packagePublicApis =
-                    Collections.synchronizedMap(new HashMap<String, List<String>>());
-            // Map from package name to set of classes. The classes are a subset of all classes 
-            // within the package. The subset are those that our code has directly referenced.
-            Map<String,Set<String>> classpathPackageDependencies =
-                Collections.synchronizedMap(new HashMap<String, Set<String>>());
+            Map<String,Set<URI>> packageArtifacts = Collections.synchronizedMap(new HashMap<String,Set<URI>>());
+            Map<String,Set<String>> packageDependencies = Collections.synchronizedMap(new HashMap<String,Set<String>>());
+            Map<String,String> packagePublicApis = Collections.synchronizedMap(new HashMap<String,String>());
 
-            boolean  r = t.transform(sjavac,
-                                     srcs,
+            boolean  r = t.transform(srcs,
                                      visibleSrcs,
                                      visibleClasses,
                                      prev.dependents(),
@@ -864,7 +724,6 @@ public class JavacState {
                                      packageArtifacts,
                                      packageDependencies,
                                      packagePublicApis,
-                                     classpathPackageDependencies,
                                      0,
                                      isIncremental(),
                                      numCores,
@@ -886,31 +745,13 @@ public class JavacState {
                 Module mnow = now.findModuleFromPackageName(a.getKey());
                 mnow.setDependencies(a.getKey(), deps);
             }
-            // With two threads compiling our sources, sources compiled by a second thread, might look like 
-            // classpath dependencies to the first thread or vice versa. We cannot remove such fake classpath dependencies 
-            // until the end of the compilation since the knowledge of what is compiled does not exist until now.
-            for (String pkg : packagePublicApis.keySet()) {
-                classpathPackageDependencies.remove(pkg);
-            }
-            // Also, if we doing an incremental compile, then references outside of the small recompiled set,
-            // will also look like classpath deps, lets remove them as well.
-            for (String pkg : prev.packages().keySet()) {
-                Package p = prev.packages().get(pkg);
-                if (p.pubapiForLinkedClasses().size() == 0) {
-                    classpathPackageDependencies.remove(pkg);
-                }
-            }
-            // Extract all classpath package classes and store the public ap
-            // into the Package object. 
-            addToClasspathPubapis(classpathPackageDependencies);
-
             // Extract all the pubapis and store the info into the Package objects.
-            for (Map.Entry<String,List<String>> a : packagePublicApis.entrySet()) {
+            for (Map.Entry<String,String> a : packagePublicApis.entrySet()) {
                 Module mprev = prev.findModuleFromPackageName(a.getKey());
-                List<String> pubapi = a.getValue();
+                List<String> pubapi = Package.pubapiToList(a.getValue());
                 Module mnow = now.findModuleFromPackageName(a.getKey());
-                mnow.setPubapiForCompiledSources(a.getKey(), pubapi);
-                if (mprev.hasPubapiForCompiledSourcesChanged(a.getKey(), pubapi)) {
+                mnow.setPubapi(a.getKey(), pubapi);
+                if (mprev.hasPubapiChanged(a.getKey(), pubapi)) {
                     // Aha! The pubapi of this package has changed!
                     // It can also be a new compile from scratch.
                     if (mprev.lookupPackage(a.getKey()).existsInJavacState()) {
@@ -929,7 +770,7 @@ public class JavacState {
      * Utility method to recursively find all files below a directory.
      */
     private static Set<File> findAllFiles(File dir) {
-        Set<File> foundFiles = new HashSet<>();
+        Set<File> foundFiles = new HashSet<File>();
         if (dir == null) {
             return foundFiles;
         }
@@ -952,7 +793,9 @@ public class JavacState {
      * Used to detect bugs where the makefile and sjavac have different opinions on which files
      * should be compiled.
      */
-    public void compareWithMakefileList(File makefileSourceList) throws ProblemException {
+    public void compareWithMakefileList(File makefileSourceList)
+            throws ProblemException
+    {
         // If we are building on win32 using for example cygwin the paths in the makefile source list
         // might be /cygdrive/c/.... which does not match c:\....
         // We need to adjust our calculated sources to be identical, if necessary.
@@ -960,21 +803,48 @@ public class JavacState {
 
         if (makefileSourceList == null) return;
 
-        Set<String> calculatedSources = new HashSet<>();
-        Set<String> listedSources = SourceLocation.loadList(makefileSourceList);
+        Set<String> calculatedSources = new HashSet<String>();
+        Set<String> listedSources = new HashSet<String>();
 
         // Create a set of filenames with full paths.
         for (Source s : now.sources().values()) {
             // Don't include link only sources when comparing sources to compile
             if (!s.isLinkedOnly()) {
-                String path = s.file().getPath();
-                if (mightNeedRewriting)
-                    path = Util.normalizeDriveLetter(path);
-                calculatedSources.add(path);
+                calculatedSources.add(s.file().getPath());
             }
         }
+        // Read in the file and create another set of filenames with full paths.
+        try {
+            BufferedReader in = new BufferedReader(new FileReader(makefileSourceList));
+            for (;;) {
+                String l = in.readLine();
+                if (l==null) break;
+                l = l.trim();
+                if (mightNeedRewriting) {
+                    if (l.indexOf(":") == 1 && l.indexOf("\\") == 2) {
+                        // Everything a-ok, the format is already C:\foo\bar
+                    } else if (l.indexOf(":") == 1 && l.indexOf("/") == 2) {
+                        // The format is C:/foo/bar, rewrite into the above format.
+                        l = l.replaceAll("/","\\\\");
+                    } else if (l.charAt(0) == '/' && l.indexOf("/",1) != -1) {
+                        // The format might be: /cygdrive/c/foo/bar, rewrite into the above format.
+                        // Do not hardcode the name cygdrive here.
+                        int slash = l.indexOf("/",1);
+                        l = l.replaceAll("/","\\\\");
+                        l = ""+l.charAt(slash+1)+":"+l.substring(slash+2);
+                    }
+                    if (Character.isLowerCase(l.charAt(0))) {
+                        l = Character.toUpperCase(l.charAt(0))+l.substring(1);
+                    }
+                }
+                listedSources.add(l);
+            }
+        } catch (FileNotFoundException e) {
+            throw new ProblemException("Could not open "+makefileSourceList.getPath()+" since it does not exist!");
+        } catch (IOException e) {
+            throw new ProblemException("Could not read "+makefileSourceList.getPath());
+        }
 
-        
         for (String s : listedSources) {
             if (!calculatedSources.contains(s)) {
                  throw new ProblemException("The makefile listed source "+s+" was not calculated by the smart javac wrapper!");
@@ -985,36 +855,6 @@ public class JavacState {
             if (!listedSources.contains(s)) {
                 throw new ProblemException("The smart javac wrapper calculated source "+s+" was not listed by the makefiles!");
             }
-        }
-    }
-
-    /**
-     * Add the classes in deps, to the pubapis of the Packages.
-     * The pubapis are stored within the corresponding Package in now.
-     */
-    public void addToClasspathPubapis(Map<String, Set<String>> deps) {
-        Sjavac comp = new SjavacImpl(options);
-        // Extract all the pubapis of the classes inside deps and
-        // store the info into the corresponding Package objects.
-        for (Map.Entry<String,Set<String>> a : deps.entrySet()) {
-            String pkg = a.getKey();
-            Module mnow = now.findModuleFromPackageName(pkg);
-            Set<String> classes = new HashSet<>();
-            classes.addAll(a.getValue());
-            classes.addAll(mnow.lookupPackage(pkg).getClassesFromClasspathPubapi());
-            List<String> sorted_classes = new ArrayList<>();
-            for (String key : classes) {
-                sorted_classes.add(key);
-            }
-            Collections.sort(sorted_classes);
-
-            List<String> pubapis = new ArrayList<>();
-            for (String s : sorted_classes) {
-                PublicApiResult r = comp.getPublicApi(s);
-                pubapis.addAll(r.api);
-                now.archives().addAll(r.archives);
-            }
-            mnow.setPubapiForLinkedClasses(a.getKey(), pubapis);                
         }
     }
 }

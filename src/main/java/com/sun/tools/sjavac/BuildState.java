@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,48 +22,38 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-/* Contains sources copyright Fredrik Öhrström 2014, 
- * licensed from Fredrik to you under the above license. */
+
 package com.sun.tools.sjavac;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
-import com.sun.tools.javac.util.Assert;
 
 /**
  * The build state class captures the source code and generated artifacts
  * from a build. There are usually two build states, the previous one (prev),
  * loaded from the javac_state file, and the current one (now).
  *
- *  <p><b>This is NOT part of any supported API.
- *  If you write code that depends on this, you do so at your own risk.
- *  This code and its internal interfaces are subject to change or
- *  deletion without notice.</b>
+ * <p><b>This is NOT part of any supported API.
+ * If you write code that depends on this, you do so at your own
+ * risk.  This code and its internal interfaces are subject to change
+ * or deletion without notice.</b></p>
  */
 public class BuildState {
-    private Map<String,Module> modules = new HashMap<>();
-    private Map<String,Package> packages = new HashMap<>();
-    private Map<String,Source> sources = new HashMap<>();
-    private Map<String,File> artifacts = new HashMap<>();
+    private Map<String,Module> modules = new HashMap<String,Module>();
+    private Map<String,Package> packages = new HashMap<String,Package>();
+    private Map<String,Source> sources = new HashMap<String,Source>();
+    private Map<String,File> artifacts = new HashMap<String,File>();
     // Map from package to a set of packages that depend on said package.
-    private Map<String,Set<String>> dependents = new HashMap<>();
-    // All Archives that are found to have the same timestamps as in the javac_state file are stored here.
-    // If a archive is not found here, it is either new, or its timestamps has changed.
-    private Set<String> archives = new HashSet<>();
+    private Map<String,Set<String>> dependents = new HashMap<String,Set<String>>();
 
     public  Map<String,Module> modules() { return modules; }
     public  Map<String,Package> packages() { return packages; }
     public  Map<String,Source> sources() { return sources; }
     public  Map<String,File> artifacts() { return artifacts; }
     public  Map<String,Set<String>> dependents() { return dependents; }
-    public  Set<String> archives() { return archives; }
 
     /**
      * Lookup a module from a name. Create the module if it does
@@ -85,7 +75,7 @@ public class BuildState {
      */
     Module findModuleFromPackageName(String pkg) {
         int cp = pkg.indexOf(':');
-        Assert.check(cp != -1);
+        assert(cp != -1);
         String mod = pkg.substring(0, cp);
         return lookupModule(mod);
     }
@@ -104,7 +94,7 @@ public class BuildState {
             for (Map.Entry<String,Package> j : i.packages().entrySet()) {
                 Package p = packages.get(j.getKey());
                 // Check that no two different packages are stored under same name.
-                Assert.check(p == null || p == j.getValue());
+                assert(p == null || p == j.getValue());
                 if (p == null) {
                     p = j.getValue();
                     packages.put(j.getKey(),j.getValue());
@@ -112,7 +102,7 @@ public class BuildState {
                 for (Map.Entry<String,Source> k : p.sources().entrySet()) {
                     Source s = sources.get(k.getKey());
                     // Check that no two different sources are stored under same name.
-                    Assert.check(s == null || s == k.getValue());
+                    assert(s == null || s == k.getValue());
                     if (s == null) {
                         s = k.getValue();
                         sources.put(k.getKey(), k.getValue());
@@ -121,7 +111,7 @@ public class BuildState {
                 for (Map.Entry<String,File> g : p.artifacts().entrySet()) {
                     File f = artifacts.get(g.getKey());
                     // Check that no two artifacts are stored under the same file.
-                    Assert.check(f == null || f == g.getValue());
+                    assert(f == null || f == g.getValue());
                     if (f == null) {
                         f = g.getValue();
                         artifacts.put(g.getKey(), g.getValue());
@@ -144,13 +134,13 @@ public class BuildState {
             for (Map.Entry<String,Package> j : i.packages().entrySet()) {
                 Package p = packages.get(j.getKey());
                 // Check that no two different packages are stored under same name.
-                Assert.check(p == null || p == j.getValue());
+                assert(p == null || p == j.getValue());
                 p = j.getValue();
                 packages.put(j.getKey(),j.getValue());
                 for (Map.Entry<String,File> g : p.artifacts().entrySet()) {
                     File f = artifacts.get(g.getKey());
                     // Check that no two artifacts are stored under the same file.
-                    Assert.check(f == null || f == g.getValue());
+                    assert(f == null || f == g.getValue());
                     artifacts.put(g.getKey(), g.getValue());
                 }
             }
@@ -161,13 +151,13 @@ public class BuildState {
      * Calculate the package dependents (ie the reverse of the dependencies).
      */
     public void calculateDependents() {
-        dependents = new HashMap<>();
+        dependents = new HashMap<String,Set<String>>();
         for (String s : packages.keySet()) {
             Package p = packages.get(s);
             for (String d : p.dependencies()) {
                 Set<String> ss = dependents.get(d);
                 if (ss == null) {
-                    ss = new HashSet<>();
+                    ss = new HashSet<String>();
                     dependents.put(d, ss);
                 }
                 // Add the dependent information to the global dependent map.
@@ -191,8 +181,8 @@ public class BuildState {
      */
     public void checkInternalState(String msg, boolean linkedOnly, Map<String,Source> srcs) {
         boolean baad = false;
-        Map<String,Source> original = new HashMap<>();
-        Map<String,Source> calculated = new HashMap<>();
+        Map<String,Source> original = new HashMap<String,Source>();
+        Map<String,Source> calculated = new HashMap<String,Source>();
 
         for (String s : sources.keySet()) {
             Source ss = sources.get(s);
@@ -269,36 +259,6 @@ public class BuildState {
         lastPackage.addSource(s);
         sources.put(s.name(), s);
         return s;
-    }
-
-    /**
-     * Add to archives, but only if the timestamp is the same, ie the archive is 
-     * probably unchanged.
-     */
-    public void loadArchiveTimestamp(String l) {
-        int p = l.indexOf(' ', 2);
-        String archive = l.substring(2, p);
-        long timestamp = Long.parseLong(l.substring(p+1));
-        File f = new File(archive);
-        if (f.lastModified() == timestamp) {
-            Log.trace("Same timestamp for "+archive);
-            archives.add(archive);
-        } else {
-            Log.debug("Timestamp changed for "+archive);
-        }
-    }
-
-    /**
-     * Save archive with timestamp info.
-     */
-    public void saveArchiveTimestamps(StringBuilder b) {
-        List<String> sorted = new ArrayList<>();
-        sorted.addAll(archives);
-        Collections.sort(sorted);
-        for (String a : sorted) {
-            File f = new File(a);
-            b.append("Z "+a+" "+f.lastModified()+"\n");
-        }
     }
 
     /**

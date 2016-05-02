@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,27 +22,22 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-/* Contains sources copyright Fredrik Öhrström 2014, 
- * licensed from Fredrik to you under the above license. */
+
 package com.sun.tools.sjavac;
 
 import java.io.File;
-import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.List;
-import java.util.Map;
 import java.util.StringTokenizer;
 
 /**
  * Utilities.
  *
- *  <p><b>This is NOT part of any supported API.
- *  If you write code that depends on this, you do so at your own risk.
- *  This code and its internal interfaces are subject to change or
- *  deletion without notice.</b>
+ * <p><b>This is NOT part of any supported API.
+ * If you write code that depends on this, you do so at your own
+ * risk.  This code and its internal interfaces are subject to change
+ * or deletion without notice.</b></p>
  */
 public class Util {
 
@@ -66,40 +61,22 @@ public class Util {
 
     public static String justPackageName(String pkgName) {
         int c = pkgName.indexOf(":");
-        if (c == -1)
-            throw new IllegalArgumentException("Expected ':' in package name (" + pkgName + ")");
+        assert(c != -1);
         return pkgName.substring(c+1);
     }
 
     public static String extractStringOption(String opName, String s) {
-        return extractStringOption(opName, s, null);
-    }
-
-    public static String extractStringOption(String opName, String s, String deflt) {
-        if (s == null) return deflt;
         int p = s.indexOf(opName+"=");
-        if (p == -1) return deflt;
+        if (p == -1) return null;
         p+=opName.length()+1;
         int pe = s.indexOf(',', p);
         if (pe == -1) pe = s.length();
         return s.substring(p, pe);
     }
 
-    public static boolean extractBooleanOption(String opName, String s, boolean deflt) {
-       String str = extractStringOption(opName, s);
-        return "true".equals(str) ? true
-             : "false".equals(str) ? false
-             : deflt;
-    }
-
     public static int extractIntOption(String opName, String s) {
-        return extractIntOption(opName, s, 0);
-    }
-
-    public static int extractIntOption(String opName, String s, int deflt) {
-        if (s == null) return deflt;
         int p = s.indexOf(opName+"=");
-        if (p == -1) return deflt;
+        if (p == -1) return 0;
         p+=opName.length()+1;
         int pe = s.indexOf(',', p);
         if (pe == -1) pe = s.length();
@@ -113,16 +90,18 @@ public class Util {
     /**
      * Clean out unwanted sub options supplied inside a primary option.
      * For example to only had portfile remaining from:
-     *    settings="-server:id=foo,portfile=bar"
-     * do settings = cleanOptions("-server:",Util.set("-portfile"),settings);
-     *    now settings equals "-server:portfile=bar"
+     *    settings="--server:id=foo,portfile=bar"
+     * do settings = cleanOptions("--server:",Util.set("-portfile"),settings);
+     *    now settings equals "--server:portfile=bar"
      *
+     * @param optionPrefix The option name, including colon, eg --server:
      * @param allowsSubOptions A set of the allowed sub options, id portfile etc.
      * @param s The option settings string.
      */
-    public static String cleanSubOptions(Set<String> allowedSubOptions, String s) {
+    public static String cleanSubOptions(String optionPrefix, Set<String> allowedSubOptions, String s) {
         StringBuilder sb = new StringBuilder();
-        StringTokenizer st = new StringTokenizer(s, ",");
+        if (!s.startsWith(optionPrefix)) return "";
+        StringTokenizer st = new StringTokenizer(s.substring(optionPrefix.length()), ",");
         while (st.hasMoreTokens()) {
             String o = st.nextToken();
             int p = o.indexOf('=');
@@ -142,7 +121,7 @@ public class Util {
      * Convenience method to create a set with strings.
      */
     public static Set<String> set(String... ss) {
-        Set<String> set = new HashSet<>();
+        Set<String> set = new HashSet<String>();
         set.addAll(Arrays.asList(ss));
         return set;
     }
@@ -178,51 +157,4 @@ public class Util {
         }
         return null;
     }
-
-    // TODO: Remove when refactoring from java.io.File to java.nio.file.Path.
-    public static File pathToFile(Path path) {
-        return path == null ? null : path.toFile();
-    }
-
-    /**
-     * Extract the jar/zip/cym archive file name from a classfile tosttring.
-     */
-    public static String extractArchive(String c) {
-        // Example:
-        // ZipFileIndexFileObject[/home/fredrik/bin/jdk1.8.0/lib/ct.sym(META-INF/sym/rt.jar/java/lang/Runnable.class)]
-        if (c.startsWith("ZipFileIndexFileObject[")) {
-            int p = c.indexOf('(', 23);
-            if (p == -1) {
-                return null;
-            }
-            return c.substring(23, p);
-        }
-        return null;
-    }
-
-    /**
-     * Utility to add to a Map<String,Set<String>>
-     */
-    public static void addToMapSet(String k, String v, Map<String,Set<String>> m) {
-        Set<String> set = m.get(k);
-        if (set == null) {
-            set = new HashSet<String>();
-            m.put(k, set);
-        }
-        set.add(v);
-    }
-
-    /**
-     * Utility to add to a Map<String,List<String>>
-     */
-    public static void addToMapList(String k, String v, Map<String,List<String>> m) {
-        List<String> list = m.get(k);
-        if (list == null) {
-            list = new ArrayList<String>();
-            m.put(k, list);
-        }
-        list.add(v);
-    }
-
-        
 }

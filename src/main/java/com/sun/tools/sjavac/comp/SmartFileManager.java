@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,19 +25,16 @@
 
 package com.sun.tools.sjavac.comp;
 
+import com.sun.tools.javac.util.ListBuffer;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.URI;
-import java.util.HashMap;
+import java.util.Set;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
-
+import java.util.HashMap;
 import javax.tools.*;
 import javax.tools.JavaFileObject.Kind;
-
-import com.sun.tools.javac.file.JavacFileManager;
-import com.sun.tools.javac.util.ListBuffer;
 
 /**
  * Intercepts reads and writes to the file system to gather
@@ -49,17 +46,17 @@ import com.sun.tools.javac.util.ListBuffer;
  * Can also blind out the filemanager from seeing certain files in the file system.
  * Necessary to prevent javac from seeing some sources where the source path points.
  *
- *  <p><b>This is NOT part of any supported API.
- *  If you write code that depends on this, you do so at your own risk.
- *  This code and its internal interfaces are subject to change or
- *  deletion without notice.</b>
+ * <p><b>This is NOT part of any supported API.
+ * If you write code that depends on this, you do so at your own
+ * risk.  This code and its internal interfaces are subject to change
+ * or deletion without notice.</b></p>
  */
 public class SmartFileManager extends ForwardingJavaFileManager<JavaFileManager> {
 
     // Set of sources that can be seen by javac.
-    Set<URI> visibleSources = new HashSet<>();
+    Set<URI> visibleSources = new HashSet<URI>();
     // Map from modulename:packagename to artifacts.
-    Map<String,Set<URI>> packageArtifacts = new HashMap<>();
+    Map<String,Set<URI>> packageArtifacts = new HashMap<String,Set<URI>>();
     // Where to print informational messages.
     PrintWriter stdout;
 
@@ -72,20 +69,11 @@ public class SmartFileManager extends ForwardingJavaFileManager<JavaFileManager>
     }
 
     public void cleanArtifacts() {
-        packageArtifacts = new HashMap<>();
+        packageArtifacts = new HashMap<String,Set<URI>>();
     }
 
     public void setLog(PrintWriter pw) {
         stdout = pw;
-    }
-
-    /**
-     * Set whether or not to use ct.sym as an alternate to rt.jar.
-     */
-    public void setSymbolFileEnabled(boolean b) {
-        if (!(fileManager instanceof JavacFileManager))
-            throw new IllegalStateException();
-        ((JavacFileManager) fileManager).setSymbolFileEnabled(b);
     }
 
     public Map<String,Set<URI>> getPackageArtifacts() {
@@ -96,20 +84,23 @@ public class SmartFileManager extends ForwardingJavaFileManager<JavaFileManager>
     public Iterable<JavaFileObject> list(Location location,
                                          String packageName,
                                          Set<Kind> kinds,
-                                         boolean recurse) throws IOException {
+                                         boolean recurse)
+        throws IOException
+    {
         // Acquire the list of files.
         Iterable<JavaFileObject> files = super.list(location, packageName, kinds, recurse);
         if (visibleSources.isEmpty()) {
             return files;
         }
         // Now filter!
-        ListBuffer<JavaFileObject> filteredFiles = new ListBuffer<>();
+        ListBuffer<JavaFileObject> filteredFiles = new ListBuffer<JavaFileObject>();
         for (JavaFileObject f : files) {
             URI uri = f.toUri();
             String t = uri.toString();
             if (t.startsWith("jar:")
                 || t.endsWith(".class")
-                || visibleSources.contains(uri)) {
+                || visibleSources.contains(uri))
+            {
                 filteredFiles.add(f);
             }
         }
@@ -124,7 +115,9 @@ public class SmartFileManager extends ForwardingJavaFileManager<JavaFileManager>
     @Override
     public JavaFileObject getJavaFileForInput(Location location,
                                               String className,
-                                              Kind kind) throws IOException {
+                                              Kind kind)
+        throws IOException
+    {
         JavaFileObject file = super.getJavaFileForInput(location, className, kind);
         if (file == null || visibleSources.isEmpty()) {
             return file;
@@ -140,7 +133,9 @@ public class SmartFileManager extends ForwardingJavaFileManager<JavaFileManager>
     public JavaFileObject getJavaFileForOutput(Location location,
                                                String className,
                                                Kind kind,
-                                               FileObject sibling) throws IOException {
+                                               FileObject sibling)
+        throws IOException
+    {
         JavaFileObject file = super.getJavaFileForOutput(location, className, kind, sibling);
         if (file == null) return file;
         int dp = className.lastIndexOf('.');
@@ -157,7 +152,9 @@ public class SmartFileManager extends ForwardingJavaFileManager<JavaFileManager>
     @Override
     public FileObject getFileForInput(Location location,
                                       String packageName,
-                                      String relativeName) throws IOException {
+                                      String relativeName)
+        throws IOException
+    {
         FileObject file =  super.getFileForInput(location, packageName, relativeName);
         if (file == null || visibleSources.isEmpty()) {
             return file;
@@ -173,7 +170,9 @@ public class SmartFileManager extends ForwardingJavaFileManager<JavaFileManager>
     public FileObject getFileForOutput(Location location,
                                        String packageName,
                                        String relativeName,
-                                       FileObject sibling) throws IOException {
+                                       FileObject sibling)
+        throws IOException
+    {
         FileObject file = super.getFileForOutput(location, packageName, relativeName, sibling);
         if (file == null) return file;
         if (location.equals(StandardLocation.NATIVE_HEADER_OUTPUT) &&
@@ -214,7 +213,7 @@ public class SmartFileManager extends ForwardingJavaFileManager<JavaFileManager>
     void addArtifact(String pkgName, URI art) {
         Set<URI> s = packageArtifacts.get(pkgName);
         if (s == null) {
-            s = new HashSet<>();
+            s = new HashSet<URI>();
             packageArtifacts.put(pkgName, s);
         }
         s.add(art);
